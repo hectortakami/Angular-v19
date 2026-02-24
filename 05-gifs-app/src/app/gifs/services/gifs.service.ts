@@ -23,7 +23,20 @@ const loadFromLocalStorage = (): Record<string, Gif[]> => {
 @Injectable({ providedIn: 'root' })
 export class GifService {
   private http = inject(HttpClient);
+
   trendingGifs = signal<Gif[]>([]);
+  // Creates a 3x3 matrix out from the results to display them for Tailwind grid
+  // https://flowbite.com/docs/components/gallery/
+  trendingGifsMasonryGrid = computed(() => {
+    const groups = [];
+    for (let i = 0; i < this.trendingGifs().length; i += 3) {
+      groups.push(this.trendingGifs().slice(i, i + 3));
+    }
+    return groups; //[ [g1,g2,g3],[g4,g5,g6] ]
+  });
+  trendingGifsLoading = signal(false);
+  trendingPage = signal(0);
+  trendingScrollTop = signal(0);
 
   // 2. Initial state from helper
   searchHistory = signal<Record<string, Gif[]>>(loadFromLocalStorage());
@@ -39,14 +52,24 @@ export class GifService {
   });
 
   loadTrendingGifs() {
-    return this.http
+    if (this.trendingGifsLoading()) return;
+
+    this.trendingGifsLoading.set(true);
+
+    this.http
       .get<GiphyResponse>(`${environment.giphyBaseURL}/gifs/trending`, {
-        params: { api_key: environment.giphyApiKey, limit: 20 },
+        params: {
+          api_key: environment.giphyApiKey,
+          limit: 20,
+          offset: this.trendingPage() * 20,
+        },
       })
-      .subscribe((response) => {
-        this.trendingGifs.set(
-          GifMapper.mapGiphyItemListToGifList(response.data),
-        );
+      .subscribe((resp) => {
+        const gifs = GifMapper.mapGiphyItemListToGifList(resp.data);
+        this.trendingGifs.update((currentGifs) => [...currentGifs, ...gifs]);
+        this.trendingPage.update((page) => page + 1);
+
+        this.trendingGifsLoading.set(false);
       });
   }
 
